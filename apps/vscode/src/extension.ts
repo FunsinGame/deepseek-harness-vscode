@@ -37,7 +37,7 @@ class WebViewProvider implements vscode.WebviewViewProvider {
     if (webview === undefined) return
     webview.html = running === undefined
       ? this.shell('<p class="hint error">DeepSeek Harness 启动失败。</p>')
-      : this.frame(running.url)
+      : this.frame(`${running.url}?embed=1`)
   }
 
   offline(): void {
