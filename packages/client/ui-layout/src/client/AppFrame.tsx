@@ -22,6 +22,7 @@ export type AppFrameProps =
   & PropsRuntime<'root'>
   & PropsRenderSlots<'sidebar' | 'conversation' | 'details' | 'shell.overlay'>
   & PropsStore<ReturnType<typeof createLayoutStore>>
+  & { back: () => void }
 
 /** Center column grid item (session-body building block). */
 function CenterColumn(props: { children?: ReactNode }) {
@@ -89,8 +90,12 @@ export function AppFrame({
   useSessions,
   actions,
   renderSlot,
+  back,
 }: AppFrameProps) {
   const panels = useStore(s => s)
+  // Embedded (VS Code sidebar) mode: single column, home/conversation states.
+  const embed = document.documentElement.dataset.dshEmbed === '1'
+  const currentSession = useSessions(s => s.current)
   const detailsSession = useSessions((s) => {
     const current = s.current
     return current !== undefined && s.byId[current]?.blank === false ? current : undefined
@@ -160,6 +165,54 @@ export function AppFrame({
   const onDetailsDrag = useCallback((dx: number) => {
     actions.setDetails(detailsBase.current - dx)
   }, [actions])
+
+  // Embedded single-column layout: home (session list) ↔ conversation, with a
+  // back button that clears the current selection. Inline styles keep the
+  // embed chrome self-contained; the column occupants render full-width.
+  if (embed) {
+    return (
+      <div
+        ref={frameRef}
+        style={{ display: 'flex', flexDirection: 'column', width: '100%', height: '100%' }}
+      >
+        {currentSession === undefined ? (
+          <div style={{ flex: '1 1 auto', minHeight: 0, overflow: 'hidden' }}>
+            {renderSlot('sidebar', { collapsed: false, width: viewport })}
+          </div>
+        ) : (
+          <>
+            <div style={{
+              flex: '0 0 auto',
+              display: 'flex',
+              alignItems: 'center',
+              padding: '6px 8px',
+              borderBottom: '1px solid var(--vscode-panel-border, #333)',
+            }}>
+              <button
+                type="button"
+                onClick={() => { back() }}
+                aria-label="返回会话列表"
+                style={{
+                  border: 'none',
+                  background: 'none',
+                  color: 'var(--vscode-foreground)',
+                  cursor: 'pointer',
+                  fontSize: 16,
+                  padding: '2px 6px',
+                  borderRadius: 4,
+                }}
+              >
+                ←
+              </button>
+            </div>
+            <div style={{ flex: '1 1 auto', minHeight: 0, overflow: 'hidden' }}>
+              {renderSlot('conversation', {})}
+            </div>
+          </>
+        )}
+      </div>
+    )
+  }
 
   return (
     <div

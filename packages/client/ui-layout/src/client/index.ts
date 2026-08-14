@@ -105,7 +105,7 @@ export interface ConvOwnerProps {}
 export interface DetailsOwnerProps {}
 
 /** Required services (cordis fiber inject — the loader passes all module exports as an object plugin). */
-export const inject = ['slots', 'theme']
+export const inject = ['slots', 'theme', 'sessions']
 
 /**
  * Client plugin body: provide ctx.layout, then one register() call — AppFrame
@@ -129,10 +129,12 @@ export function apply(ctx: ClientContext): void {
       // entry and delivers useStore/actions to AppFrame as standard props.
       store: createLayoutStore,
       // The hook's only side effect connects the root store to ctx.layout;
-      // conversation business actions belong to their registrants.
+      // conversation business actions belong to their registrants. The embed
+      // layout needs one session action (back → clear current selection), so it
+      // is the single member of the root inject face.
       inject: (actions: PanelActions) => {
         layout.attachPanels(actions)
-        return {}
+        return { back: () => { ctx.sessions.clear() } }
       },
     }, AppFrame)
     return () => {
