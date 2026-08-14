@@ -457,6 +457,12 @@ export class TestSessions implements ISessions {
     })
   }
 
+  /** Recorded refresh (the production re-pulls the session-list baseline). */
+  refresh(): Promise<void> {
+    this.calls.push({ method: 'refresh', args: [] })
+    return Promise.resolve()
+  }
+
   /**
    * Replace the sidebar-search result page (the call is still recorded).
    * @param impl - hits for a query, as the Host would rank them.

@@ -113,6 +113,30 @@ export function SidebarRoot({
     }
   }, [pointerInside])
 
+  // Embedded (VS Code sidebar) mode: settings becomes a top toolbar and the
+  // session list fills the rest of the column; the logo/new-session chrome and
+  // footer are dropped. The composer is rendered by the layout below this slot.
+  const embed = document.documentElement.dataset.dshEmbed === '1'
+  if (embed) {
+    return (
+      <div className={css.root} style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+        <div style={{
+          flex: '0 0 auto',
+          display: 'flex',
+          justifyContent: 'flex-end',
+          alignItems: 'center',
+          padding: '4px 6px',
+          borderBottom: '1px solid var(--vscode-panel-border, #333)',
+        }}>
+          {renderSlot('sidebar.settings', { wide: true })}
+        </div>
+        <div style={{ flex: '1 1 auto', minHeight: 0, overflow: 'hidden' }}>
+          {renderSlot('sidebar.workspaces', { wide: true, expandSidebar: () => {} })}
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div
       ref={column}

@@ -757,6 +757,7 @@ export function WorkspaceBrowser({
   createWorkspace,
   searchSessions,
   searchResultLimit,
+  refresh,
   useDirectoryFlow,
   renderSlot,
   t,
@@ -1043,6 +1044,17 @@ export function WorkspaceBrowser({
           </div>
         )}
         <div className={clsx(css.headerActions, wide && searchExpanded && css.headerActionsHidden)}>
+          {embed && (
+            <button
+              type="button"
+              className={css.iconButton}
+              aria-label="刷新"
+              title="刷新"
+              onClick={() => { void refresh() }}
+            >
+              ⟳
+            </button>
+          )}
           {wide && !embed && (
             <ViewOptionsMenu
               groupBy={groupBy}

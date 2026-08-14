@@ -108,6 +108,8 @@ export type WorkspaceBrowserInjected = DirectoryPickingInjected & {
   ) => Promise<{ items: readonly SessionSearchResultItem[]; hasMore: boolean }>
   /** Maximum number of merged rows rendered for one search. */
   searchResultLimit: number
+  /** Re-pull the session-list baseline (the embedded home's refresh button). */
+  refresh: () => Promise<void>
   /** Rename a Session (explicit user title; resolves on host acceptance). */
   renameSession: (sessionId: SessionId, title: string) => Promise<void>
   /** Fork a Session at its last completed turn and open the child. */
