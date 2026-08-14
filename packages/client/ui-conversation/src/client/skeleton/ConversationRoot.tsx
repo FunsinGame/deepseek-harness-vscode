@@ -14,7 +14,7 @@ export type ConversationRootProps = ConversationSlotProps
 
 export function ConversationRoot({
   sessionId, useSession, useSessions, useWorkspaces, useInput, useComposerBlock,
-  renderSlot, renderSlotChain, selectWorkspace, startSession, t,
+  renderSlot, renderSlotChain, selectWorkspace, t,
 }: ConversationRootProps) {
   const openState = useSession(s => s.openState)
   const composerPhase = useSession(s => s.composerPhase)
@@ -76,11 +76,8 @@ export function ConversationRoot({
   // after one fails (`error`) for the same reason — there is no history.
   const settling = sessionId !== undefined && composerPhase === 'blank' && openState === 'loading'
     && summaryBlank !== true
-  // Embedded (VS Code sidebar) home has no centered hero: the composer sits at
-  // the bottom of the session list, so it renders as the active compact bar.
-  const embed = document.documentElement.dataset.dshEmbed === '1'
-  const hero = !(embed && sessionId === undefined)
-    && (sessionId === undefined || (composerPhase === 'blank' && (openState === 'open' || summaryBlank === true)))
+  const hero = sessionId === undefined
+    || (composerPhase === 'blank' && (openState === 'open' || summaryBlank === true))
   const zone: InputZone | undefined =
     session === undefined || inputState === undefined ? undefined : { session, input: inputState }
 
@@ -131,7 +128,7 @@ export function ConversationRoot({
   // blank session whose workspace vanished (deleted from the sidebar). The
   // bar is ONE session-maybe slot rendered unconditionally — inert is a prop,
   // not a different tree, so the textarea DOM survives the transition.
-  const inert = (sessionId === undefined && !embed) || (hero && chipTitle === undefined)
+  const inert = sessionId === undefined || (hero && chipTitle === undefined)
   // A raised block is the same inert posture with the blocker's own reason:
   // one disabled textarea, never a second tree. The no-workspace state wins
   // when both hold — picking a workspace is the earlier prerequisite.
@@ -139,19 +136,12 @@ export function ConversationRoot({
   const inputBar = renderSlot('conversation.composer.bar', {
     variant: hero ? 'hero' : 'composer',
     ...(inert
-      ? embed
-        ? {
-          disabled: true,
-          placeholder: '点击开始新对话',
-          workspacePickerOpen: false,
-          onRequestWorkspace: () => { startSession() },
-        }
-        : {
-          disabled: true,
-          placeholder: t('placeholder.workspace'),
-          workspacePickerOpen: pickerOpen,
-          onRequestWorkspace: () => { setPickerOpen(true) },
-        }
+      ? {
+        disabled: true,
+        placeholder: t('placeholder.workspace'),
+        workspacePickerOpen: pickerOpen,
+        onRequestWorkspace: () => { setPickerOpen(true) },
+      }
       : blocked
         // `blocked`, not `disabled`: the bar refuses input either way, but a
         // block keeps the model seat live because choosing a model is how the
@@ -192,16 +182,6 @@ export function ConversationRoot({
       {composer}
     </div>
   )
-
-  // Embedded home renders only the composer (no header, no scroll body, no
-  // hero): the session list above it belongs to the sidebar column.
-  if (embed && sessionId === undefined) {
-    return (
-      <div className={css.root} data-phase="active">
-        {composerSeat}
-      </div>
-    )
-  }
 
   return (
     <div className={css.root} data-phase={phase}>

@@ -176,13 +176,8 @@ export function AppFrame({
         style={{ display: 'flex', flexDirection: 'column', width: '100%', height: '100%' }}
       >
         {currentSession === undefined ? (
-          <div style={{ flex: '1 1 auto', minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-            <div style={{ flex: '1 1 auto', minHeight: 0, overflow: 'hidden' }}>
-              {renderSlot('sidebar', { collapsed: false, width: viewport })}
-            </div>
-            <div style={{ flex: '0 0 auto' }}>
-              {renderSlot('conversation', {})}
-            </div>
+          <div style={{ flex: '1 1 auto', minHeight: 0, overflow: 'hidden' }}>
+            {renderSlot('sidebar', { collapsed: false, width: viewport })}
           </div>
         ) : (
           <>

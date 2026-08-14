@@ -986,6 +986,17 @@ export function WorkspaceBrowser({
             {effectiveGroupBy === 'flat' ? t('section.sessions') : t('section.workspaces')}
           </span>
         )}
+        {embed && (
+          <button
+            type="button"
+            className={css.iconButton}
+            aria-label="新建会话"
+            title="新建会话"
+            onClick={() => { startSession() }}
+          >
+            ＋
+          </button>
+        )}
         {wide && (
           <div className={clsx(css.searchSlot, searchExpanded && css.searchSlotExpanded)}>
             <div
