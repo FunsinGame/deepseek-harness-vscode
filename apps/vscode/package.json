@@ -1,0 +1,125 @@
+{
+  "name": "@deepseek-ai/dsh-vscode",
+  "displayName": "DeepSeek Harness",
+  "description": "Run DeepSeek Harness inside VS Code: the extension boots the dsh web profile on a loopback port and hosts the full GUI in an editor panel.",
+  "version": "0.1.0-rc.5",
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/deepseek-ai/deepseek-harness.git",
+    "directory": "apps/vscode"
+  },
+  "publisher": "deepseek-ai",
+  "license": "MIT",
+  "icon": "media/icon.svg",
+  "main": "./dist/extension.js",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "AI",
+    "Machine Learning",
+    "Programming Languages"
+  ],
+  "keywords": [
+    "deepseek",
+    "harness",
+    "agent",
+    "coding-agent",
+    "ai"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "dsh.open",
+        "title": "Open",
+        "category": "DeepSeek Harness"
+      },
+      {
+        "command": "dsh.openBrowser",
+        "title": "Open in Browser",
+        "category": "DeepSeek Harness"
+      },
+      {
+        "command": "dsh.restart",
+        "title": "Restart",
+        "category": "DeepSeek Harness"
+      },
+      {
+        "command": "dsh.stop",
+        "title": "Stop",
+        "category": "DeepSeek Harness"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "dsh.open",
+        "key": "ctrl+shift+alt+d",
+        "mac": "cmd+shift+alt+d"
+      }
+    ],
+    "configuration": {
+      "title": "DeepSeek Harness",
+      "properties": {
+        "dsh.cliPath": {
+          "type": "string",
+          "default": "",
+          "description": "Absolute path to the `dsh` CLI entry (the bin.js file, e.g. the `lib/bin.js` of an installed @deepseek-ai/dsh). Leave empty to resolve `dsh` from PATH."
+        },
+        "dsh.host": {
+          "type": "string",
+          "default": "127.0.0.1",
+          "enum": [
+            "127.0.0.1"
+          ],
+          "description": "Loopback host the harness web server binds. Only loopback is offered so the agent's shell access is never exposed to the network."
+        },
+        "dsh.port": {
+          "type": "number",
+          "default": 0,
+          "minimum": 0,
+          "maximum": 65535,
+          "description": "Port the harness web server binds; 0 lets the OS pick a free port."
+        }
+      }
+    },
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "dsh",
+          "title": "DeepSeek Harness",
+          "icon": "media/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "dsh": [
+        {
+          "type": "webview",
+          "id": "dsh.web",
+          "name": "DeepSeek Harness",
+          "icon": "media/icon.svg"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "watch": "tsc -p tsconfig.json --watch",
+    "vscode:prepublish": "tsc -p tsconfig.json"
+  },
+  "files": [
+    "dist",
+    "media"
+  ],
+  "devDependencies": {
+    "@types/node": "^22.20.0",
+    "@types/vscode": "^1.85.0",
+    "typescript": "^6.0.3"
+  }
+}
