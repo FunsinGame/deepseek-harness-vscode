@@ -13,7 +13,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import clsx from 'clsx'
 import {
   Button, IconCloseFill14, IconPersonalizationOutline16,
-  IconProjectAddOutline16, IconSearchOutline16, Menu, Modal, Tooltip,
+  IconProjectAddOutline16, IconSearchOutline16, IconTrashOutline16, Menu, Modal, Tooltip,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type {
   SessionId, SessionListState, SessionSearchResultItem, WorkspaceId, WorkspaceView,
@@ -766,6 +766,9 @@ export function WorkspaceBrowser({
   // apps/web before boot. In embed mode the browser shows a flat session list
   // for the boot workspace and drops the workspace-management chrome.
   const embed = document.documentElement.dataset.dshEmbed === '1'
+  const sessionIds = useSessions(s => s.ids)
+  const [clearAllOpen, setClearAllOpen] = useState(false)
+  const [clearing, setClearing] = useState(false)
   const workspaces = useWorkspaces(state => state.items)
   const workspacePhase = useWorkspaces(state => state.phase)
   const archivedSessionIds = useWorkspaces(state => state.archivedSessionIds)
@@ -943,6 +946,16 @@ export function WorkspaceBrowser({
     })
   }
 
+  /** Archive every listed session (the embedded home's "clear all"). */
+  const confirmClearAll = (): void => {
+    setClearing(true)
+    void Promise.all(sessionIds.map(id => archiveSession(id).catch(() => {})))
+      .finally(() => {
+        setClearing(false)
+        setClearAllOpen(false)
+      })
+  }
+
   // Delete dialog is separate from the row so a successful removal can
   // unmount that row without tearing down the in-flight confirmation state.
   const [deleteTarget, setDeleteTarget] = useState<{ workspaceId: WorkspaceId; title: string } | null>(null)
@@ -1065,6 +1078,18 @@ export function WorkspaceBrowser({
             >
               ⟳
             </button>
+          )}
+          {embed && (
+            <Tooltip label="全部清空" side="bottom" delayMs={500}>
+              <button
+                type="button"
+                className={css.iconButton}
+                aria-label="全部清空"
+                onClick={() => { setClearAllOpen(true) }}
+              >
+                <IconTrashOutline16 size={16} />
+              </button>
+            </Tooltip>
           )}
           {wide && !embed && (
             <ViewOptionsMenu
@@ -1285,6 +1310,20 @@ export function WorkspaceBrowser({
         {deleting && <div className={css.deleteStatus} role="status">{t('delete.pending')}</div>}
         {deleteError !== null && <div className={css.renameError} role="alert">{deleteError}</div>}
       </Modal>
+
+      <Modal
+        open={clearAllOpen}
+        onClose={() => { if (!clearing) setClearAllOpen(false) }}
+        closeLabel="取消"
+        title="全部清空"
+        description="确定要删除所有会话吗？"
+        footer={(
+          <>
+            <Button variant="outline" disabled={clearing} onClick={() => { setClearAllOpen(false) }}>取消</Button>
+            <Button variant="outline" className={css.deleteAction} disabled={clearing} onClick={confirmClearAll}>全部清空</Button>
+          </>
+        )}
+      />
     </div>
   )
 }
