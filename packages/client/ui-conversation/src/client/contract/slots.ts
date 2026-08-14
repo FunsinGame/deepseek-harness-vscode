@@ -417,6 +417,11 @@ export interface ConversationInjected {
    */
   selectWorkspace: (workspaceId: WorkspaceId) => Promise<void>
   /**
+   * Create-or-reuse the blank session for the boot/recent Workspace and open
+   * it (the embedded home's inert composer gesture).
+   */
+  startSession: () => void
+  /**
    * Framework-bound sources. `composerBlock` is this session's block when a
    * plugin raised one; the reason is the blocker's own localized copy, which
    * the root renders as the inert composer's placeholder.

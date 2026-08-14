@@ -211,6 +211,8 @@ export function apply(ctx: Context): void {
     },
     inject: (sessionId: SessionId | undefined): ConversationInjected => ({
       hooks: { composerBlock: sessionId === undefined ? ABSENT_BLOCK : composerBlocks.storeFor(sessionId) },
+      // The embedded home's inert composer creates a blank session on click.
+      startSession: () => { workspaces.startSession() },
       selectWorkspace: async (workspaceId) => {
         const nextId = await workspaces.connectWorkspace(workspaceId)
         if (sessionId !== undefined && nextId !== sessionId) {
