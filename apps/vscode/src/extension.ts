@@ -35,9 +35,14 @@ class WebViewProvider implements vscode.WebviewViewProvider {
     const running = await this.boot()
     const webview = this.view?.webview
     if (webview === undefined) return
-    webview.html = running === undefined
-      ? this.shell('<p class="hint error">DeepSeek Harness 启动失败。</p>')
-      : this.frame(`${running.url}?embed=1`)
+    if (running === undefined) {
+      webview.html = this.shell('<p class="hint error">DeepSeek Harness 启动失败。</p>')
+      return
+    }
+    // Scope the embedded session list to the open workspace: its path rides the
+    // URL so the web filters `session.list` rows by `cwd`.
+    const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? process.cwd()
+    webview.html = this.frame(`${running.url}?embed=1&cwd=${encodeURIComponent(cwd)}`)
   }
 
   offline(): void {

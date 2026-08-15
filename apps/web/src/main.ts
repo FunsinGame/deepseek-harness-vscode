@@ -10,6 +10,8 @@ import { AppWebEntry } from '@deepseek-ai/dsh-client-web'
 // UI (workspace-management chrome hidden, flat session list) can read it.
 if (new URLSearchParams(window.location.search).get('embed') === '1') {
   document.documentElement.dataset.dshEmbed = '1'
+  const cwd = new URLSearchParams(window.location.search).get('cwd')
+  if (cwd !== null) document.documentElement.dataset.dshCwd = cwd
 }
 
 const el = document.getElementById('root')

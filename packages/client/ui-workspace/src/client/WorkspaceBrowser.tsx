@@ -54,6 +54,12 @@ function toggled(list: readonly string[], key: string): string[] {
   return list.includes(key) ? list.filter(k => k !== key) : [...list, key]
 }
 
+/** Canonicalize a working-directory path for equality (case-folded, forward slashes). */
+function normalizeCwd(path: string | undefined): string {
+  if (path === undefined) return ''
+  return path.toLowerCase().replace(/\\/g, '/').replace(/\/+$/, '')
+}
+
 /**
  * Accept the native drag at document level while a row drag is active: row
  * hover still owns the insertion marker, and releasing outside the list must
@@ -546,6 +552,7 @@ function SessionTree({
 function FlatList({
   useSessions, open, forkSession, onSessionRename, onSessionArchive, archivedSessionIds,
   orderBy, sessionOrderByAccount, sessionUpdatedAtByAccount, syncSessionOrderAccount, setSessionOrder, t,
+  filterCwd,
 }: Pick<
   SessionTreeProps,
   | 'useSessions'
@@ -560,12 +567,14 @@ function FlatList({
   | 'syncSessionOrderAccount'
   | 'setSessionOrder'
   | 't'
->) {
+> & { filterCwd?: string }) {
   const list = useSessions(s => s)
-  const baseRows = useMemo(
-    () => deriveFlat(list, archivedSessionIds),
-    [list, archivedSessionIds],
-  )
+  const baseRows = useMemo(() => {
+    const rows = deriveFlat(list, archivedSessionIds)
+    return filterCwd === undefined
+      ? rows
+      : rows.filter(row => normalizeCwd(list.byId[row.id]?.cwd) === normalizeCwd(filterCwd))
+  }, [list, archivedSessionIds, filterCwd])
   const sessionIds = useMemo(() => baseRows.map(row => row.id), [baseRows])
   const previousOrderBy = useRef(orderBy)
   useEffect(() => {
@@ -766,7 +775,14 @@ export function WorkspaceBrowser({
   // apps/web before boot. In embed mode the browser shows a flat session list
   // for the boot workspace and drops the workspace-management chrome.
   const embed = document.documentElement.dataset.dshEmbed === '1'
-  const sessionIds = useSessions(s => s.ids)
+  const embedCwd = embed ? document.documentElement.dataset.dshCwd : undefined
+  const sessionList = useSessions(s => s)
+  const sessionIds = useMemo(
+    () => embedCwd === undefined
+      ? sessionList.ids
+      : sessionList.ids.filter(id => normalizeCwd(sessionList.byId[id]?.cwd) === normalizeCwd(embedCwd)),
+    [sessionList, embedCwd],
+  )
   const [clearAllOpen, setClearAllOpen] = useState(false)
   const [clearing, setClearing] = useState(false)
   const workspaces = useWorkspaces(state => state.items)
@@ -1183,6 +1199,7 @@ export function WorkspaceBrowser({
                 sessionUpdatedAtByAccount={sessionUpdatedAtByAccount}
                 syncSessionOrderAccount={actions.syncSessionOrderAccount}
                 setSessionOrder={actions.setSessionOrder}
+                filterCwd={embedCwd}
                 t={t}
               />
             )
