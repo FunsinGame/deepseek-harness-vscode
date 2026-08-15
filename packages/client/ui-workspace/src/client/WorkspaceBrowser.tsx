@@ -573,7 +573,10 @@ function FlatList({
     const rows = deriveFlat(list, archivedSessionIds)
     return filterCwd === undefined
       ? rows
-      : rows.filter(row => normalizeCwd(list.byId[row.id]?.cwd) === normalizeCwd(filterCwd))
+      : rows.filter((row) => {
+        const cwd = list.byId[row.id]?.cwd
+        return cwd === undefined || normalizeCwd(cwd) === normalizeCwd(filterCwd)
+      })
   }, [list, archivedSessionIds, filterCwd])
   const sessionIds = useMemo(() => baseRows.map(row => row.id), [baseRows])
   const previousOrderBy = useRef(orderBy)
@@ -780,7 +783,10 @@ export function WorkspaceBrowser({
   const sessionIds = useMemo(
     () => embedCwd === undefined
       ? sessionList.ids
-      : sessionList.ids.filter(id => normalizeCwd(sessionList.byId[id]?.cwd) === normalizeCwd(embedCwd)),
+      : sessionList.ids.filter((id) => {
+        const cwd = sessionList.byId[id]?.cwd
+        return cwd === undefined || normalizeCwd(cwd) === normalizeCwd(embedCwd)
+      }),
     [sessionList, embedCwd],
   )
   const [clearAllOpen, setClearAllOpen] = useState(false)
@@ -972,6 +978,20 @@ export function WorkspaceBrowser({
       })
   }
 
+  /** New Session scoped to the embedded workspace: resolve its Workspace by
+   * path, then start the blank session there (a bare startSession() would fall
+   * back to the persisted recent Workspace, which is the wrong folder). */
+  const newSessionInEmbed = (): void => {
+    if (embedCwd === undefined) {
+      startSession()
+      return
+    }
+    void createWorkspace({ path: embedCwd }).then(
+      (workspace) => { startSession(workspace.workspaceId) },
+      (reason: unknown) => { console.warn('embed new session failed:', reason) },
+    )
+  }
+
   // Delete dialog is separate from the row so a successful removal can
   // unmount that row without tearing down the in-flight confirmation state.
   const [deleteTarget, setDeleteTarget] = useState<{ workspaceId: WorkspaceId; title: string } | null>(null)
@@ -1021,7 +1041,7 @@ export function WorkspaceBrowser({
             className={css.iconButton}
             aria-label="新建会话"
             title="新建会话"
-            onClick={() => { startSession() }}
+            onClick={() => { newSessionInEmbed() }}
           >
             ＋
           </button>
