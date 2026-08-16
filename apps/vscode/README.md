@@ -8,6 +8,7 @@ The DeepSeek Harness VS Code extension: it boots the harness `web` profile on a 
 2. Opening the view resolves the `dsh` CLI in this order: the `dsh.cliPath` setting, the `DSH_CLI` environment variable, the `apps/cli/lib/bin.js` build inside a source checkout, then `dsh` on `PATH`.
 3. It spawns `dsh --profile web --host 127.0.0.1 --port <dsh.port>` (port `0` requests an OS-assigned port) with the first workspace folder as its working directory, then waits for the `dsh web: http://127.0.0.1:<port>` readiness line.
 4. The view renders that URL in a full-size iframe. `Open in Browser` hands the same URL to `vscode.env.openExternal`.
+5. The extension also starts a token-protected loopback bridge and passes `DSH_VSCODE=1`, `DSH_VSCODE_BRIDGE`, and `DSH_VSCODE_BRIDGE_TOKEN` to the child. Harness plugins that detect the embedded mode can call `POST /open-file` and `POST /open-diff` on that bridge to open files/diffs in the current VS Code window instead of spawning a separate `code` process.
 
 ## Requirements
 

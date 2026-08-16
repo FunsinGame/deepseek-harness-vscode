@@ -4,7 +4,7 @@
  * import), so the lifecycle is testable against a real child process.
  */
 
-import { spawn, type ChildProcess } from 'node:child_process'
+import { spawn, type ChildProcess, type SpawnOptions } from 'node:child_process'
 import type { ResolvedLaunch } from './cli'
 import { parseReadyLine } from './cli'
 
@@ -16,6 +16,8 @@ export interface StartOptions {
   flags: readonly string[]
   /** Working directory for the child; the harness treats this as its working directory. */
   cwd?: string
+  /** Extra environment variables merged over `process.env` for the child. */
+  env?: Readonly<Record<string, string>>
   /** Milliseconds to wait for the readiness line before failing. */
   timeoutMs?: number
   /** Receives raw child stdout/stderr text as it arrives. */
@@ -46,15 +48,19 @@ export function startServer(options: StartOptions): Promise<RunningServer> {
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS
 
   return new Promise<RunningServer>((resolve, reject) => {
+    const spawnOptions: SpawnOptions = {
+      shell: launch.shell,
+      cwd: options.cwd,
+      stdio: ['ignore', 'pipe', 'pipe'],
+      windowsHide: true,
+    }
+    if (options.env !== undefined) {
+      spawnOptions.env = { ...process.env, ...options.env }
+    }
     const child: ChildProcess = spawn(
       launch.command,
       [...launch.argsPrefix, ...flags],
-      {
-        shell: launch.shell,
-        cwd: options.cwd,
-        stdio: ['ignore', 'pipe', 'pipe'],
-        windowsHide: true,
-      },
+      spawnOptions,
     )
 
     let settled = false

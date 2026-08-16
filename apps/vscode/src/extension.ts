@@ -6,8 +6,11 @@
  * that workspace's conversations, and clicking a session opens its chat.
  */
 
-import { resolve } from 'node:path'
+import { mkdtemp, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { basename, extname, join, resolve } from 'node:path'
 import * as vscode from 'vscode'
+import { startBridge, type BridgeHandlers, type RunningBridge } from './bridge'
 import { buildProfileArgs, resolveLaunch, type WebFlags } from './cli'
 import { startServer, type RunningServer } from './server'
 
@@ -18,6 +21,12 @@ const VIEW_ID = 'dsh.web'
 let server: RunningServer | undefined
 let booting: Promise<RunningServer | undefined> | undefined
 let webProvider: WebViewProvider | undefined
+let bridge: RunningBridge | undefined
+let bridgePromise: Promise<RunningBridge | undefined> | undefined
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
+}
 
 class WebViewProvider implements vscode.WebviewViewProvider {
   private view: vscode.WebviewView | undefined
@@ -89,6 +98,61 @@ export function activate(context: vscode.ExtensionContext): void {
   const output = vscode.window.createOutputChannel(OUTPUT_NAME)
   context.subscriptions.push(output)
 
+  function getBridge(): Promise<RunningBridge | undefined> {
+    if (bridge !== undefined) return Promise.resolve(bridge)
+    if (bridgePromise !== undefined) return bridgePromise
+
+    const handlers: BridgeHandlers = {
+      openFile: async ({ path, line }) => {
+        try {
+          const document = await vscode.workspace.openTextDocument(vscode.Uri.file(path))
+          await vscode.window.showTextDocument(document, {
+            preview: true,
+            ...(line === undefined ? {} : { selection: new vscode.Range(line - 1, 0, line - 1, 0) }),
+          })
+          return true
+        } catch (error) {
+          output.appendLine(`[dsh-vscode] openFile failed: ${errorMessage(error)}`)
+          return false
+        }
+      },
+      openDiff: async ({ path, oldText, newText }) => {
+        try {
+          const dir = await mkdtemp(join(tmpdir(), 'dsh-vscode-diff-'))
+          const ext = extname(path)
+          const base = basename(path, ext)
+          const oldPath = join(dir, `${base}.old${ext}`)
+          const newPath = join(dir, `${base}.new${ext}`)
+          await writeFile(oldPath, oldText, 'utf8')
+          await writeFile(newPath, newText, 'utf8')
+          await vscode.commands.executeCommand(
+            'vscode.diff',
+            vscode.Uri.file(oldPath),
+            vscode.Uri.file(newPath),
+            `${base}${ext} (DSH diff)`,
+          )
+          return true
+        } catch (error) {
+          output.appendLine(`[dsh-vscode] openDiff failed: ${errorMessage(error)}`)
+          return false
+        }
+      },
+    }
+
+    bridgePromise = startBridge(handlers)
+      .then((running) => {
+        bridge = running
+        bridgePromise = undefined
+        return running
+      })
+      .catch((error: unknown) => {
+        bridgePromise = undefined
+        output.appendLine(`[dsh-vscode] bridge failed to start: ${errorMessage(error)}`)
+        return undefined
+      })
+    return bridgePromise
+  }
+
   const statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100)
   statusBar.command = 'dsh.open'
   context.subscriptions.push(statusBar)
@@ -132,10 +196,17 @@ export function activate(context: vscode.ExtensionContext): void {
     output.appendLine(`$ ${[launch.command, ...argv].join(' ')}`)
 
     const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath
+    const runningBridge = await getBridge()
+    const env = runningBridge === undefined ? undefined : {
+      DSH_VSCODE: '1',
+      DSH_VSCODE_BRIDGE: runningBridge.url,
+      DSH_VSCODE_BRIDGE_TOKEN: runningBridge.token,
+    }
     const promise = startServer({
       launch,
       flags: buildProfileArgs(flags),
       ...(cwd === undefined ? {} : { cwd }),
+      ...(env === undefined ? {} : { env }),
       onLog: text => output.append(text),
     }).then((running) => {
       server = running
@@ -200,6 +271,13 @@ export function activate(context: vscode.ExtensionContext): void {
 export async function deactivate(): Promise<void> {
   const running = server
   server = undefined
-  if (running === undefined) return
-  await running.stop()
+  if (running !== undefined) {
+    await running.stop()
+  }
+  const runningBridge = bridge
+  bridge = undefined
+  bridgePromise = undefined
+  if (runningBridge !== undefined) {
+    await runningBridge.stop()
+  }
 }
