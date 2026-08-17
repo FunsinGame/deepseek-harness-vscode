@@ -1230,6 +1230,23 @@ describe('ChatView', () => {
     expect(view.getByText('加载中…')).toBeTruthy()
   })
 
+  it('dispatches the turn navigator slot with the anchored older loader', () => {
+    const h = makeHarness({ nodes: [user(1, 'first'), assistant(2, 'a'), user(3, 'second')] })
+    const navigatorOwners: Array<{ loadOlder: () => void }> = []
+    h.props.renderSlot = ((key: string, owner: { loadOlder?: () => void }, opts?: { fallback?: React.ReactNode }) => {
+      if (key === 'conversation.chat.navigator') {
+        navigatorOwners.push(owner as { loadOlder: () => void })
+        return <div data-testid="turn-navigator-slot" />
+      }
+      return opts?.fallback ?? null
+    }) as ChatViewSlotProps['renderSlot']
+    const view = render(<h.ChatView {...h.props} />)
+    expect(view.getByTestId('turn-navigator-slot')).toBeTruthy()
+    expect(navigatorOwners).toHaveLength(1)
+    navigatorOwners[0]?.loadOlder()
+    expect(h.loadOlder).toHaveBeenCalledTimes(1)
+  })
+
   it('shows open error and loading states', () => {
     const h = makeHarness({
       openState: 'error',

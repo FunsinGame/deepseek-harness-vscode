@@ -1219,7 +1219,7 @@ export function WorkspaceBrowser({
                 sessionUpdatedAtByAccount={sessionUpdatedAtByAccount}
                 syncSessionOrderAccount={actions.syncSessionOrderAccount}
                 setSessionOrder={actions.setSessionOrder}
-                filterCwd={embedCwd}
+                {...(embedCwd === undefined ? {} : { filterCwd: embedCwd })}
                 t={t}
               />
             )

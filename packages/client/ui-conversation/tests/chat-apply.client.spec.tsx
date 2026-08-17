@@ -64,11 +64,13 @@ describe('apply wiring', () => {
     // Label is a locale thunk resolving through the zh dictionary.
     expect(resolveSlotLabel(entries[0]?.options.label)).toBe('对话')
     expect(entries[0]?.options.order).toBe(0)
-    // Declaring is claiming: the chat entry's registration put the hole on
+    // Declaring is claiming: the chat entry's registration put the holes on
     // the ledger with the contract's kind/scope.
     const nodeSlot = b.slots.spec('conversation.chat.node')
     expect(nodeSlot).toMatchObject({ kind: 'keyed', scope: 'session' })
     expect(nodeSlot?.inject?.hooks?.turnData).toBeTypeOf('function')
+    const navigatorSlot = b.slots.spec('conversation.chat.navigator')
+    expect(navigatorSlot).toMatchObject({ kind: 'single', scope: 'session' })
     await b.runtime.dispose()
   })
 
@@ -118,6 +120,8 @@ describe('apply wiring', () => {
     expect(b.slots.entries('conversation.view')).toHaveLength(0)
     expect(b.slots.entries('conversation.chat.node')).toHaveLength(0)
     expect(b.slots.spec('conversation.chat.node')).toBeUndefined()
+    expect(b.slots.entries('conversation.chat.navigator')).toHaveLength(0)
+    expect(b.slots.spec('conversation.chat.navigator')).toBeUndefined()
     expect(b.slots.entries('details')).toHaveLength(0)
     expect(b.slots.entries('settings.general.item')).toHaveLength(0)
     expect(b.runtime.ctx.get('conversation')).toBeUndefined()

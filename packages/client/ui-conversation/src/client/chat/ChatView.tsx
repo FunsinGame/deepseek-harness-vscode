@@ -422,6 +422,7 @@ export function ChatView({
           </div>
         )}
       </div>
+      {renderSlot('conversation.chat.navigator', { loadOlder: loadOlderAnchored })}
     </div>
   )
 }

@@ -84,6 +84,13 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
       inject: ChatNodeTurnDataInjected
     }
     /**
+     * The chat view's turn-navigation rail hole: a session-scoped single seat
+     * beside the transcript flow. The chat view supplies the anchored
+     * older-history loader so a rail can load enough history to decide
+     * visibility without moving the reader's current row.
+     */
+    'conversation.chat.navigator': { kind: 'single'; scope: 'session'; owner: TurnNavigatorOwnerProps }
+    /**
      * The chat view's per-command row hole: keyed dispatch on the command
      * name (`command/run.name`; a run-less cross-window node has none and
      * always lands on the fallback). Declared by the chat view entry; the
@@ -311,6 +318,19 @@ declare module '@deepseek-ai/cordis' {
     /** Prose file-mention provider (ui-deliverables); reach via ctx.get — optional. */
     chatFileMentions: ChatFileMentions
   }
+}
+
+/**
+ * Owner currency of the chat view's turn-navigator hole: the anchored
+ * older-history loader. The callback preserves the reader's current row while
+ * older history is prepended, matching the chat view's own "Load earlier"
+ * button behavior.
+ */
+export interface TurnNavigatorOwnerProps {
+  /**
+   * Load an older history page while keeping the current reading position.
+   */
+  loadOlder: () => void
 }
 
 /**
@@ -707,9 +727,9 @@ export interface ChatViewInjected {
   fileMentions: (owner: TurnTailOwnerProps) => MarkdownFileMentions | undefined
 }
 
-/** Full chat-view component props: runtime & its Tool/command/tail render shares & store & injected & locale seat. */
+/** Full chat-view component props: runtime & its Tool/command/navigator/tail render shares & store & injected & locale seat. */
 export type ChatViewSlotProps =
-  PropsRuntime<'conversation.view'> & PropsRenderSlots<'conversation.chat.node'>
+  PropsRuntime<'conversation.view'> & PropsRenderSlots<'conversation.chat.node' | 'conversation.chat.navigator'>
   & PropsStore<ChatStore> & ChatViewInjected & PropsLocale<'conversation'>
 
 /**
