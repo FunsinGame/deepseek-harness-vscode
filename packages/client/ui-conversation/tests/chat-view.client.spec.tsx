@@ -955,7 +955,9 @@ describe('ChatView', () => {
     const h = makeHarness({ nodes: [block] })
     const calls: { key: string; owner: object; entryKey?: string }[] = []
     h.props.renderSlot = ((key: string, owner: object, opts?: { entryKey?: string; fallback?: React.ReactNode }) => {
-      calls.push({ key, owner, ...(opts?.entryKey !== undefined ? { entryKey: opts.entryKey } : {}) })
+      if (key === 'conversation.chat.node') {
+        calls.push({ key, owner, ...(opts?.entryKey !== undefined ? { entryKey: opts.entryKey } : {}) })
+      }
       return opts?.fallback ?? null
     })
     render(<h.ChatView {...h.props} />)
