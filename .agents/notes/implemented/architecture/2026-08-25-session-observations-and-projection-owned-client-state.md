@@ -120,7 +120,7 @@ Client-local interaction state also remains local: loading and error status, an 
 
 ### Domain applications
 
-- **Title and list metadata.** Cached projection hints may render an existing title and determine blankness or recency. Missing hints leave those facts unknown; only the bounded small-log policy may resolve them during listing.
+- **Title and list metadata.** Cached projection hints may render an existing title and determine blankness or recency. Missing hints leave those facts unknown; only the bounded small-log policy may resolve them during listing. A cached non-blank row whose title is an explicit `null` is treated as stale and refolded from the log once, writing the refreshed checkpoint back.
 - **Model selection.** `model/selection` records a complete provider, model, and optional reasoning effort. `modelSelection` distinguishes the last request's route from a later selection pending consumption by a request header.
 - **Agent preset.** The projection initializes from immutable Session metadata and advances on preset-selection events. A missing or `null` value is not replaced with the deployment default for an existing Session.
 - **Subagent identity.** The `subagent` unit remains the sole descriptor interpreter. Listing obtains candidates from the shared corpus and resolves values through live state, projection cache, or an observation rather than scanning events itself.

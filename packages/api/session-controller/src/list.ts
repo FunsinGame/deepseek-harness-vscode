@@ -167,20 +167,80 @@ export class ApiSessionList {
     signal: AbortSignal | undefined,
   ): Promise<SessionSummary> {
     const cached = this.projectionsFor(header, undefined)
-    const projections = cached?.values.sessionListMetadata?.blank === false
+    const metadata = cached?.values.sessionListMetadata
+    const titleUsable = typeof cached?.values.title === 'string'
+    const titleStaleNull = cached?.values.title === null
+    // A cached non-blank row whose title is an explicit `null` is a stale
+    // checkpoint when the title event landed after the row's watermark. Read
+    // the log once so the list can show the real title instead of falling
+    // back to the project basename; the cold read writes the refreshed
+    // checkpoint back when the cache is composed. Unknown blank rows keep the
+    // existing bounded small-log probe.
+    const projections = metadata?.blank === false && titleUsable
       ? cached
-      : await this.probeSmallCold(header, signal) ?? cached
+      : await (cached !== undefined && titleStaleNull && metadata?.blank !== true
+        ? this.probeColdTitle(header, signal)
+        : this.probeSmallCold(header, signal)) ?? cached
     const raced = this.ctx.sessions.get(header.id)
     if (raced !== undefined) return this.summaryFor(raced)
-    const metadata = projections?.values.sessionListMetadata
+    const metadataAfter = projections?.values.sessionListMetadata
     return {
       sessionId: header.id,
-      updatedAt: updatedAt(header, metadata),
+      updatedAt: updatedAt(header, metadataAfter),
       running: false,
       // A large or inaccessible cache miss remains unknown and visible.
-      blank: metadata?.blank ?? false,
+      blank: metadataAfter?.blank ?? false,
       ...listFields(header),
       ...(projections === undefined ? {} : { projections }),
+    }
+  }
+
+  /**
+   * Read a cold Session's complete projection cut when its cached hints hold
+   * a stale null title. The projection cache's cold read refolds the log and
+   * writes the refreshed checkpoint back (fail-soft), so a stale checkpoint
+   * self-heals after one listing. Without a cache, the exact observation
+   * still supplies the cut for this response.
+   * @param header - the listed Session's identity witness.
+   * @param signal - optional cancellation for the log read.
+   * @returns the full projection hints, or `undefined` when the read fails.
+   */
+  private async probeColdTitle(
+    header: SessionHeader,
+    signal: AbortSignal | undefined,
+  ): Promise<SessionProjectionHints | undefined> {
+    const cache = this.ctx.get('sessionProjectionCache')
+    if (cache !== undefined) {
+      try {
+        const loaded = await this.ctx.sessionQuery.readSession(header.id)
+        signal?.throwIfAborted()
+        const block = cache.coldSnapshot(loaded.session, loaded.events)
+        return block === undefined || Object.keys(block.values).length === 0
+          ? undefined
+          : { asOfSeq: block.asOfSeq, values: block.values as SessionProjectionValues }
+      } catch (error: unknown) {
+        signal?.throwIfAborted()
+        this.ctx.logger.warn(
+          `api-session.list: cold title read for "${header.id}" failed; serving cached hints: ${String(error)}`,
+        )
+        return undefined
+      }
+    }
+    try {
+      using observation = await this.ctx.sessionQuery.observeSession(header.id, {
+        ...(signal === undefined ? {} : { signal }),
+        projectionMode: 'all',
+      })
+      const block = observation.projections
+      return block === undefined
+        ? undefined
+        : { asOfSeq: block.asOfSeq, values: block.values as SessionProjectionValues }
+    } catch (error: unknown) {
+      signal?.throwIfAborted()
+      this.ctx.logger.warn(
+        `api-session.list: cold title observation for "${header.id}" failed; serving cached hints: ${String(error)}`,
+      )
+      return undefined
     }
   }
 

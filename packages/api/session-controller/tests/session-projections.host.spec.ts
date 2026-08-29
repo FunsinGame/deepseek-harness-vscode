@@ -16,7 +16,7 @@ import { agentPresetProjectionDefinition } from '@deepseek-ai/dsh-agent-presets'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
-import type { Session } from '@deepseek-ai/dsh-session'
+import type { Session, SessionEvent, SessionHeader } from '@deepseek-ai/dsh-session'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import type { ProjectionDefinition } from '@deepseek-ai/dsh-session-projection'
 import { SessionControlController } from '@deepseek-ai/dsh-api-session-controller/src/control.ts'
@@ -418,6 +418,63 @@ describe('session.list projections column', () => {
         title: 'Cached title',
       },
     })
+  })
+
+  it('refolds a cold non-blank row whose cached hints hold a stale null title', async () => {
+    const { ctx } = await harness(true)
+    const coldId = SessionId('session-cold-stale-title')
+    const coldMeta: SessionHeader = {
+      version: 0,
+      id: coldId,
+      createdAt: 5,
+      cwd: '/tmp',
+    }
+    const events = [
+      { type: 'turn/start', seq: 0, time: 5, data: { turn: 1 } },
+      {
+        type: 'user/message', seq: 1, time: 6,
+        data: createUserMessage({ content: [{ type: 'text', text: 'hello' }], source: { kind: 'user' } }),
+        surfaceOp: 'append',
+      },
+      {
+        type: 'session/title', seq: 2, time: 7,
+        data: { title: 'Refolded title', messageSeqs: [1], source: { kind: 'fallback' } },
+      },
+      { type: 'turn/end', seq: 3, time: 8, data: { turn: 1, reason: { kind: 'completed' } } },
+    ] as SessionEvent[]
+    const coldSnapshot = vi.fn(() => ({
+      asOfSeq: 3,
+      values: {
+        sessionListMetadata: { blank: false, lastPromptAt: 6 },
+        title: 'Refolded title',
+      },
+    }))
+    ctx.provide('sessionPersistence', {
+      list: async () => [coldMeta],
+      inspect: async (id: SessionId) => {
+        if (id !== coldId) throw new Error(`unexpected cold read: ${String(id)}`)
+        return { meta: coldMeta, events }
+      },
+    } as never)
+    ctx.provide('sessionProjectionCache', {
+      cachedSnapshot: (meta: { id: unknown; createdAt: number }) =>
+        meta.id === coldId && meta.createdAt === 5
+          ? {
+            asOfSeq: 1,
+            values: {
+              sessionListMetadata: { blank: false, lastPromptAt: 6 },
+              title: null,
+            },
+          }
+          : undefined,
+      coldSnapshot,
+    } as never)
+
+    const response = await remote(ctx).list(request({}))
+    if (!response.ok) throw new Error('list failed')
+    const row = response.value.items.find(item => item.sessionId === coldId)
+    expect(row?.projections?.values.title).toBe('Refolded title')
+    expect(coldSnapshot).toHaveBeenCalledWith(coldMeta, events)
   })
 
   it('cold rows without a cache plugin (or without a stored row) just lack the column', async () => {
