@@ -1,7 +1,7 @@
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import {
   CLAUDE_AGENT_SDK_PACKAGE,
   claudeDistributionFromManifest,
@@ -14,6 +14,7 @@ import {
   parseVendoredRows,
   render,
   tierExternalDeps,
+  verifyPayloadLicenseFromRegistry,
   virtualManifest,
 } from './gen-third-party-notices.ts'
 
@@ -24,11 +25,11 @@ describe('THIRD_PARTY_NOTICES.md', () => {
   // already runs in the test lane, so the check costs no extra CI process.
   // Pre-commit regenerates the file whenever a manifest is staged, so reaching
   // this assertion means the notices were committed without that hook.
-  it('matches what the generator produces from the current manifests', () => {
-    const generated = render()
+  it('matches what the generator produces from the current manifests', async () => {
+    const generated = await render()
     expect(generated).toContain('It depends on the third-party software listed below.')
     expect(readFileSync(resolve(root, 'THIRD_PARTY_NOTICES.md'), 'utf8'), 'stale notices — run `pnpm run gen-third-party-notices`').toBe(generated)
-  })
+  }, 30_000)
 })
 
 /** Build the (manifests, names) pair `tierExternalDeps` consumes. */
@@ -141,6 +142,21 @@ describe('virtualManifest', () => {
       writeFileSync(join(other, 'package.json'), JSON.stringify({ name: 'other-pkg', version: '1.0.0' }))
 
       expect(virtualManifest(store, '@scope/missing')).toBeUndefined()
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('skips a prefix store entry whose package.json is missing', () => {
+    const root = mkdtempSync(join(tmpdir(), 'dsh-notices-empty-'))
+    try {
+      const store = join(root, 'store')
+      const name = '@scope/pkg'
+      const version = '1.0.0'
+      const emptyDir = join(store, `${name.replace('/', '+')}@${version}`, 'node_modules', name)
+      mkdirSync(emptyDir, { recursive: true })
+
+      expect(virtualManifest(store, name, version)).toBeUndefined()
     } finally {
       rmSync(root, { recursive: true, force: true })
     }
@@ -346,6 +362,43 @@ describe('official Claude distribution authorization', () => {
         '@anthropic-ai/unrelated': '1.0.0',
       },
     })).toThrow('outside its authorized platform-payload identity')
+  })
+
+  it('verifies a platform payload license from npm registry metadata', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        name: `${CLAUDE_AGENT_SDK_PACKAGE}-win32-x64`,
+        version: '0.3.241',
+        license: 'SEE LICENSE IN LICENSE.md',
+      }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    try {
+      await expect(verifyPayloadLicenseFromRegistry(`${CLAUDE_AGENT_SDK_PACKAGE}-win32-x64`, '0.3.241'))
+        .resolves.toBeUndefined()
+      expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining('registry.npmjs.org/'))
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('rejects registry metadata that changes a platform payload license', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        name: `${CLAUDE_AGENT_SDK_PACKAGE}-win32-x64`,
+        version: '0.3.241',
+        license: 'MIT',
+      }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    try {
+      await expect(verifyPayloadLicenseFromRegistry(`${CLAUDE_AGENT_SDK_PACKAGE}-win32-x64`, '0.3.241'))
+        .rejects.toThrow(/does not match/)
+    } finally {
+      vi.unstubAllGlobals()
+    }
   })
 })
 

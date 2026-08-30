@@ -10,20 +10,32 @@ afterAll(() => { rmSync(temp, { recursive: true, force: true }) })
 describe('buildProfileArgs', () => {
   it('assembles the web-profile flag vector', () => {
     expect(buildProfileArgs({ host: '127.0.0.1', port: 0 })).toEqual([
-      '--profile', 'web', '--host', '127.0.0.1', '--port', '0',
+      '--profile', 'web', '--host', '127.0.0.1', '--port', '0', '--no-open',
     ])
   })
 })
 
 describe('parseReadyLine', () => {
-  it('parses the printed readiness line', () => {
-    expect(parseReadyLine('dsh web: http://127.0.0.1:3080')).toEqual({ host: '127.0.0.1', port: 3080 })
+  it('parses the printed readiness line including the launch token', () => {
+    expect(parseReadyLine('dsh web: http://127.0.0.1:3080/?token=test-token'))
+      .toEqual({ host: '127.0.0.1', port: 3080, url: 'http://127.0.0.1:3080/?token=test-token' })
+  })
+
+  it('parses a tokenless readiness line for backward compatibility', () => {
+    expect(parseReadyLine('dsh web: http://127.0.0.1:3080'))
+      .toEqual({ host: '127.0.0.1', port: 3080, url: 'http://127.0.0.1:3080' })
+  })
+
+  it('takes only the loopback URL when a LAN URL follows', () => {
+    expect(parseReadyLine('dsh web: http://127.0.0.1:3080/?token=test-token (LAN: http://192.168.1.5:3080/?token=other)'))
+      .toEqual({ host: '127.0.0.1', port: 3080, url: 'http://127.0.0.1:3080/?token=test-token' })
   })
 
   it('ignores unrelated and malformed lines', () => {
     expect(parseReadyLine('some other log')).toBeUndefined()
     expect(parseReadyLine('dsh web: http://127.0.0.1:')).toBeUndefined()
     expect(parseReadyLine('dsh web: http://127.0.0.1:abc')).toBeUndefined()
+    expect(parseReadyLine('dsh web: http://127.0.0.1:70000/?token=x')).toBeUndefined()
   })
 })
 

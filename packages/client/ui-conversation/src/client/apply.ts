@@ -21,6 +21,7 @@ import { ConversationController, UnsupportedImageMediaTypeError } from './servic
 import type { IConversation } from './service.ts'
 import { ComposerBlockRegistry } from './input/blocks.ts'
 import type { ComposerBlock } from './contract/composer-blocks.ts'
+import { installEmbedInput } from './embed-input.ts'
 import { InputHub } from './input/hub.ts'
 import { ComposerSubmissionPolicy } from './input/submission-policy.ts'
 import { queueDockEntry } from './queue/QueueDock.tsx'
@@ -151,6 +152,14 @@ export function apply(ctx: Context): void {
 
   const inputHub = new InputHub(ctx, t)
   const composerBlocks = new ComposerBlockRegistry()
+
+  ctx.effect(() => installEmbedInput({
+    isEmbed: () => document.documentElement.dataset.dshEmbed === '1',
+    pageToken: () => new URLSearchParams(window.location.search).get('token') ?? undefined,
+    currentSessionId: () => sessions.list.getSnapshot().current,
+    insertText: (sessionId, text) => { inputHub.shell(sessionId).paste(text) },
+    sendResult: (result) => { window.parent.postMessage(result, '*') },
+  }), 'ui-conversation: VS Code embed input')
 
   // Conversation assembly and input share the Session binding lifecycle. The
   // source roster is installed before any consuming Slot entry.

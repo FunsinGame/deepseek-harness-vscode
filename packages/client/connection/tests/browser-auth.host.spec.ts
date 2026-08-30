@@ -55,8 +55,9 @@ function createAuth(
   store: RecordCredentials,
   maxAgeDays = 30,
   processOwner: object = {},
+  acceptLaunchToken = false,
 ): Promise<BrowserAuth> {
-  return BrowserAuth.create(processOwner, credentials(store), maxAgeDays)
+  return BrowserAuth.create(processOwner, credentials(store), maxAgeDays, acceptLaunchToken)
 }
 
 function request(url: string, authority = '127.0.0.1:3080', init?: {
@@ -138,6 +139,64 @@ describe('BrowserAuth', () => {
         'referrer-policy': 'no-referrer',
       },
     })
+  })
+
+  it('preserves non-token query parameters through token exchange', async () => {
+    const auth = await createAuth(new RecordCredentials())
+    const launch = new URL(auth.authenticatedUrl('http://127.0.0.1:3080'))
+    launch.searchParams.set('embed', '1')
+    launch.searchParams.set('cwd', 'C:/workspace')
+    const requestUrl = `${launch.pathname}${launch.search}`
+
+    const exchanged = response()
+    expect(auth.authorizeIndex(request(requestUrl, '127.0.0.1:3080'), exchanged.value)).toBe(false)
+    expect(exchanged.state.status).toBe(303)
+    expect(exchanged.state.headers?.['location']).toBe('/?embed=1&cwd=C%3A%2Fworkspace')
+    const setCookie = exchanged.state.headers?.['set-cookie']
+    if (setCookie === undefined) throw new Error('token exchange did not set a cookie')
+    const cookie = setCookie.split(';', 1)[0]!
+
+    const replayed = response()
+    expect(auth.authorizeIndex(request(requestUrl, '127.0.0.1:3080', { cookie }), replayed.value)).toBe(false)
+    expect(replayed.state.status).toBe(303)
+    expect(replayed.state.headers?.['location']).toBe('/?embed=1&cwd=C%3A%2Fworkspace')
+
+    const served = response()
+    expect(auth.authorizeIndex(request('/?embed=1&cwd=C%3A%2Fworkspace', '127.0.0.1:3080', { cookie }), served.value)).toBe(true)
+    expect(served.state).toEqual({})
+  })
+
+  it('serves embedded index directly and accepts the launch token on API requests', async () => {
+    const auth = await createAuth(new RecordCredentials(), 30, {}, true)
+    const launch = new URL(auth.authenticatedUrl('http://127.0.0.1:3080'))
+    launch.searchParams.set('embed', '1')
+    launch.searchParams.set('cwd', 'C:/workspace')
+    const requestUrl = `${launch.pathname}${launch.search}`
+
+    const served = response()
+    expect(auth.authorizeIndex(request(requestUrl, '127.0.0.1:3080'), served.value)).toBe(true)
+    expect(served.state).toEqual({})
+
+    const token = launch.searchParams.get('token')
+    if (token === null) throw new Error('embedded launch URL has no token')
+    expect(auth.isLaunchTokenRequest({
+      headers: { host: '127.0.0.1:3080', 'x-dsh-token': token },
+      url: '/api/session.list',
+    })).toBe(true)
+    expect(auth.isLaunchTokenRequest({
+      headers: { host: '127.0.0.1:3080' },
+      url: `/api/remote.mux?token=${encodeURIComponent(token)}`,
+    })).toBe(true)
+    expect(auth.isLaunchTokenRequest({
+      headers: { host: '127.0.0.1:3080', 'x-dsh-token': 'wrong' },
+      url: '/api/session.list',
+    })).toBe(false)
+
+    const nonEmbedded = await createAuth(new RecordCredentials())
+    expect(nonEmbedded.isLaunchTokenRequest({
+      headers: { host: '127.0.0.1:3080', 'x-dsh-token': token },
+      url: '/api/session.list',
+    })).toBe(false)
   })
 
   it('accepts the cookie for index serving and gives every unauthenticated request one response', async () => {

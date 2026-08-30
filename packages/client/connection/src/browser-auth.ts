@@ -66,6 +66,19 @@ function header(
   return typeof value === 'string' ? value : undefined
 }
 
+/** Read the embedded launch token from an API header or WebSocket query string. */
+function launchTokenFromRequest(request: ConnectionTrustRequest): string | undefined {
+  const headerToken = header(request.headers, 'x-dsh-token')
+  if (headerToken !== undefined) return headerToken
+  if (request.url === undefined) return undefined
+  try {
+    const tokens = new URL(request.url, 'http://dsh.invalid').searchParams.getAll(TOKEN_QUERY)
+    return tokens.length === 1 ? tokens[0] : undefined
+  } catch {
+    return undefined
+  }
+}
+
 /** Canonical request authority used as the cookie name and signed audience. */
 function requestAuthority(headers: ConnectionTrustRequest['headers']): string | undefined {
   const host = header(headers, 'host')
@@ -115,6 +128,13 @@ function cookieValue(headerValue: string, name: string): string | undefined {
     return segment.slice(at + 1).trim()
   }
   return undefined
+}
+
+/** The redirect target after token exchange: the same URL with the secret token removed. */
+function redirectWithoutToken(url: URL): string {
+  const target = new URL(url)
+  target.searchParams.delete(TOKEN_QUERY)
+  return `${target.pathname}${target.search}${target.hash}`
 }
 
 /** Serialize the fixed browser-session attributes; generated names and values are cookie-safe base64url. */
@@ -190,6 +210,7 @@ export class BrowserAuth {
     processOwner: object,
     private readonly secret: Buffer,
     maxAgeDays: number,
+    private readonly acceptLaunchToken: boolean,
   ) {
     this.launchToken = processLaunchToken(processOwner)
     this.maxAgeMilliseconds = maxAgeDays * DAY_MILLISECONDS
@@ -205,14 +226,16 @@ export class BrowserAuth {
    * @param processOwner - root application context retaining one token across Connection reloads.
    * @param credentials - persistent credential provider for the Web profile.
    * @param maxAgeDays - positive absolute browser-cookie lifetime in days.
+   * @param acceptLaunchToken - accept the process launch token on API/WebSocket requests for embedded hosts.
    * @returns initialized authentication owner with the process owner's launch token.
    */
   static async create(
     processOwner: object,
     credentials: CredentialProvider,
     maxAgeDays: number,
+    acceptLaunchToken = false,
   ): Promise<BrowserAuth> {
-    return new BrowserAuth(processOwner, await initializeSecret(credentials), maxAgeDays)
+    return new BrowserAuth(processOwner, await initializeSecret(credentials), maxAgeDays, acceptLaunchToken)
   }
 
   /**
@@ -231,8 +254,9 @@ export class BrowserAuth {
 
   /**
    * Authenticate an index request. A valid root query token mints the cookie
-   * and redirects to clean `/`; a valid cookie lets the caller serve the
-   * index; every other request receives the same minimal 401 response.
+   * and redirects to the same URL without the token; a valid cookie lets the
+   * caller serve the index; every other request receives the same minimal 401
+   * response.
    * @param req - incoming root or configured-index request.
    * @param res - response owned when this method returns false.
    * @returns true only when the caller may serve index.html.
@@ -243,8 +267,12 @@ export class BrowserAuth {
     const tokens = url.searchParams.getAll(TOKEN_QUERY)
     if (tokens.length > 0) {
       const authority = requestAuthority(req.headers)
+      const redirectTo = redirectWithoutToken(url)
       if (req.method === 'GET' && url.pathname === '/' && tokens.length === 1
         && authority !== undefined && tokenMatches(tokens.join(''), this.launchToken)) {
+        if (this.acceptLaunchToken && url.searchParams.get('embed') === '1') {
+          return true
+        }
         const issuedAt = Date.now()
         const expiresAt = issuedAt + this.maxAgeMilliseconds
         const value = encodeCookie({
@@ -255,7 +283,7 @@ export class BrowserAuth {
         }, this.secret)
         res.writeHead(303, {
           'cache-control': 'no-store',
-          'location': '/',
+          'location': redirectTo,
           'referrer-policy': 'no-referrer',
           'set-cookie': sessionCookie(
             cookieName(authority), value, expiresAt, Math.floor(this.maxAgeMilliseconds / 1000),
@@ -267,7 +295,7 @@ export class BrowserAuth {
       if (req.method === 'GET' && url.pathname === '/' && this.isAuthenticated(req)) {
         res.writeHead(303, {
           'cache-control': 'no-store',
-          'location': '/',
+          'location': redirectTo,
           'referrer-policy': 'no-referrer',
         })
         res.end()
@@ -299,6 +327,18 @@ export class BrowserAuth {
       && payload.expiresAt > now
       && payload.expiresAt > payload.issuedAt
       && payload.expiresAt - payload.issuedAt <= this.maxAgeMilliseconds
+  }
+
+  /**
+   * Verify the process launch token on an embedded API/WebSocket request.
+   * Active only for embedded hosts that cannot rely on cross-site cookies.
+   * @param request - request headers, plus the URL for query-string tokens.
+   * @returns true only for the current process launch token.
+   */
+  isLaunchTokenRequest(request: ConnectionTrustRequest): boolean {
+    if (!this.acceptLaunchToken) return false
+    const token = launchTokenFromRequest(request)
+    return token !== undefined && tokenMatches(token, this.launchToken)
   }
 
   private writeUnauthorized(req: ConnectionIndexRequest, res: ConnectionIndexResponse): void {

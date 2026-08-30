@@ -9,13 +9,13 @@ afterAll(() => { rmSync(temp, { recursive: true, force: true }) })
 
 describe('startServer', () => {
   it('parses the readiness line and stops the child', async () => {
-    const script = "console.log('dsh web: http://127.0.0.1:43210'); setInterval(() => {}, 1000)"
+    const script = "console.log('dsh web: http://127.0.0.1:43210/?token=test-token'); setInterval(() => {}, 1000)"
     const server = await startServer({
       launch: { command: process.execPath, argsPrefix: ['-e', script], shell: false },
       flags: [],
       timeoutMs: 5_000,
     })
-    expect(server.url).toBe('http://127.0.0.1:43210')
+    expect(server.url).toBe('http://127.0.0.1:43210/?token=test-token')
     expect(server.port).toBe(43210)
 
     await server.stop()

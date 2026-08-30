@@ -93,7 +93,7 @@ export function startServer(options: StartOptions): Promise<RunningServer> {
         settled = true
         clearTimeout(timer)
         resolve({
-          url: `http://${ready.host}:${String(ready.port)}`,
+          url: ready.url,
           port: ready.port,
           exitCode: exitPromise,
           stop,

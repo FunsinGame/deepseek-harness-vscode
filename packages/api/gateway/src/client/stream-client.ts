@@ -209,7 +209,6 @@ export class RemoteStreamMuxClient {
         reject: (error) => {
           cleanup()
           // AbortSignal.reason belongs to the caller and may intentionally be a non-Error sentinel.
-          // oxlint-disable-next-line typescript/prefer-promise-reject-errors
           reject(error)
         },
       }
@@ -340,9 +339,11 @@ class StreamInbox {
 }
 
 function remoteStreamUrl(): string {
-  const location = (globalThis as { location?: { origin?: string } }).location
+  const location = (globalThis as { location?: { origin?: string; search?: string } }).location
   const base = location?.origin !== undefined && location.origin !== 'null' ? location.origin : INTERNAL_BASE
   const url = new URL(REMOTE_STREAM_MUX_PATH, base)
+  const token = location?.search === undefined ? undefined : new URLSearchParams(location.search).get('token')
+  if (token !== null && token !== undefined) url.searchParams.set('token', token)
   url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
   return url.href
 }

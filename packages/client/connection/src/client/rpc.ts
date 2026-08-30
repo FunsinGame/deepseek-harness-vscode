@@ -40,11 +40,14 @@ export function createWebConnectionRpc(doFetch?: RpcFetch, openStream?: RpcStrea
         method: endpoint,
         payload,
       }
+      const headers: Record<string, string> = { 'content-type': 'application/json' }
+      const launchToken = pageLaunchToken()
+      if (launchToken !== undefined) headers['x-dsh-token'] = launchToken
       const response = await send(
         new URL(`${channel}/${endpoint}`, resolveBase()),
         {
           method: 'POST',
-          headers: { 'content-type': 'application/json' },
+          headers,
           body: JSON.stringify(message),
           ...signal === undefined ? {} : { signal },
         },
@@ -108,6 +111,14 @@ function isRecord(value: unknown): value is Record<PropertyKey, unknown> {
 function resolveBase(): string {
   const location = (globalThis as { location?: { origin?: string } }).location
   return location?.origin !== undefined && location.origin !== 'null' ? location.origin : INTERNAL_BASE
+}
+
+/** Launch token embedded in the page URL by the VS Code extension. */
+function pageLaunchToken(): string | undefined {
+  const location = (globalThis as { location?: { search?: string } }).location
+  if (location?.search === undefined) return undefined
+  const token = new URLSearchParams(location.search).get('token')
+  return token === null ? undefined : token
 }
 
 function assertTarget(channel: string, endpoint: string): void {

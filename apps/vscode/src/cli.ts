@@ -36,26 +36,32 @@ export interface ResolveInput {
 
 /** Build the `--profile web` argv vector from the extension's flags. */
 export function buildProfileArgs(flags: WebFlags): string[] {
-  return ['--profile', 'web', '--host', flags.host, '--port', String(flags.port)]
+  return ['--profile', 'web', '--host', flags.host, '--port', String(flags.port), '--no-open']
 }
 
 /** The readiness line the web app prints once the server has bound. */
-const READY_LINE = /dsh web: http:\/\/([^/\s:]+):(\d+)/
+const READY_LINE = /dsh web: (https?:\/\/[^\s)]+)/
 
 /**
- * Parse the web app's readiness line into the loopback host and bound port.
+ * Parse the web app's readiness line into the authenticated URL, loopback host,
+ * and bound port.
  * @param line - one line of the child's stdout.
- * @returns the bound host and port, or `undefined` when the line is not the readiness signal.
+ * @returns the printed URL, bound host, and port, or `undefined` when the line is not the readiness signal.
  */
-export function parseReadyLine(line: string): { host: string; port: number } | undefined {
+export function parseReadyLine(line: string): { host: string; port: number; url: string } | undefined {
   const match = READY_LINE.exec(line)
-  if (match === null) return undefined
-  const host = match[1]
-  const port = match[2]
-  if (host === undefined || port === undefined) return undefined
-  const parsed = Number(port)
-  if (!Number.isInteger(parsed)) return undefined
-  return { host, port: parsed }
+  const urlText = match?.[1]
+  if (urlText === undefined) return undefined
+  let url: URL
+  try {
+    url = new URL(urlText)
+  } catch {
+    return undefined
+  }
+  if (url.protocol !== 'http:' || url.hostname === '' || url.port === '') return undefined
+  const port = Number(url.port)
+  if (!Number.isInteger(port) || port <= 0 || port > 65_535) return undefined
+  return { host: url.hostname, port, url: urlText }
 }
 
 /** Launch an explicit JS entry through the system `node`, never the extension host's Electron node. */

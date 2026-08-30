@@ -54,8 +54,34 @@
         "command": "dsh.stop",
         "title": "Stop",
         "category": "DeepSeek Harness"
+      },
+      {
+        "command": "dsh.sendSelection",
+        "title": "发送到 DSH",
+        "category": "DeepSeek Harness"
+      },
+      {
+        "command": "dsh.sendFile",
+        "title": "发送到 DSH",
+        "category": "DeepSeek Harness"
       }
     ],
+    "menus": {
+      "editor/context": [
+        {
+          "command": "dsh.sendSelection",
+          "when": "editorHasSelection && resourceScheme == file",
+          "group": "navigation@10"
+        }
+      ],
+      "editor/title/context": [
+        {
+          "command": "dsh.sendFile",
+          "when": "resourceScheme == file",
+          "group": "navigation@10"
+        }
+      ]
+    },
     "keybindings": [
       {
         "command": "dsh.open",

@@ -2357,17 +2357,33 @@ describe('Remote stream client carrier lifecycle', () => {
       await expect(disposed).rejects.toThrow('Remote stream client disposed')
     })
   })
+
+  it('appends the embedded launch token to the WebSocket URL', async () => {
+    await withFakeWebSocket('http://127.0.0.1:49914', async () => {
+      const client = new RemoteStreamMuxClient()
+      const opened = client.open('feed/follow', {}, new AbortController().signal)[Symbol.asyncIterator]().next()
+      await vi.waitFor(() => { expect(FakeWebSocket.sockets).toHaveLength(1) })
+      expect(FakeWebSocket.sockets[0]?.url).toBe('ws://127.0.0.1:49914/api/remote.mux?token=test-token')
+      await vi.waitFor(() => { expect(FakeWebSocket.sockets[0]?.sent).toHaveLength(1) })
+      await client.close()
+      await expect(opened).rejects.toThrow('Remote stream client disposed')
+    }, '?token=test-token&embed=1')
+  })
 })
 
 async function withFakeWebSocket(
   origin: string | undefined,
   run: () => Promise<void>,
+  search = '',
 ): Promise<void> {
   const originalWebSocket = globalThis.WebSocket
   const locationDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'location')
   ;(globalThis as WebSocketGlobal).WebSocket = FakeWebSocket as unknown as typeof WebSocket
   if (origin === undefined) Reflect.deleteProperty(globalThis, 'location')
-  else Object.defineProperty(globalThis, 'location', { configurable: true, value: { origin } })
+  else Object.defineProperty(globalThis, 'location', {
+    configurable: true,
+    value: search === '' ? { origin } : { origin, search },
+  })
   FakeWebSocket.sockets.length = 0
   FakeWebSocket.autoOpen = true
   FakeWebSocket.dispatchClose = true

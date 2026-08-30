@@ -260,7 +260,9 @@ export function virtualManifest(
   const prefix = `${name.replace('/', '+')}@`
   const entries = readdirSync(virtual)
   for (const entry of entries.filter(dir => dir.startsWith(prefix))) {
-    const manifest = JSON.parse(readFileSync(resolve(virtual, entry, 'node_modules', name, 'package.json'), 'utf8')) as VirtualManifest
+    const candidate = resolve(virtual, entry, 'node_modules', name, 'package.json')
+    if (!existsSync(candidate)) continue
+    const manifest = JSON.parse(readFileSync(candidate, 'utf8')) as VirtualManifest
     if (expectedVersion === undefined || manifest.version === expectedVersion) return manifest
   }
   for (const dir of entries) {
@@ -332,7 +334,38 @@ function installedMetadata(name: string): { license: string; repo: string } {
   return { license, repo }
 }
 
-function collectClaudeDistribution(): ClaudeDistribution {
+/**
+ * Verify one Claude platform payload's declared license against npm registry
+ * metadata. This is the fallback for hosts where pnpm did not install the
+ * optional platform payload, so the disclosure can still be generated without
+ * downloading the Claude Code executable.
+ * @param name - exact npm package identity of the platform payload.
+ * @param version - exact version declared by the installed SDK manifest.
+ */
+export async function verifyPayloadLicenseFromRegistry(
+  name: string,
+  version: string,
+): Promise<void> {
+  const url = `https://registry.npmjs.org/${encodeURIComponent(name)}/${encodeURIComponent(version)}`
+  const response = await fetch(url)
+  if (!response.ok) {
+    throw new Error(
+      `gen-third-party-notices: cannot verify ${name}@${version} license from npm registry (HTTP ${response.status}); install optional dependencies or check network.`,
+    )
+  }
+  const manifest = await response.json() as { name?: string; version?: string; license?: string }
+  if (
+    manifest.name !== name
+    || manifest.version !== version
+    || manifest.license !== CLAUDE_PLATFORM_DECLARED_LICENSE
+  ) {
+    throw new Error(
+      `gen-third-party-notices: registry ${name}@${version} does not match its SDK-declared version and ${CLAUDE_PLATFORM_DECLARED_LICENSE} license field.`,
+    )
+  }
+}
+
+async function collectClaudeDistribution(): Promise<ClaudeDistribution> {
   const manifest = installedManifest(CLAUDE_AGENT_SDK_PACKAGE)
   if (manifest === undefined) {
     throw new Error(
@@ -356,9 +389,9 @@ function collectClaudeDistribution(): ClaudeDistribution {
     }
   }
   if (installedPayloads === 0) {
-    throw new Error(
-      'gen-third-party-notices: no SDK-declared Claude platform payload is installed; install optional dependencies before regenerating.',
-    )
+    await Promise.all(distribution.payloads.map(payload =>
+      verifyPayloadLicenseFromRegistry(payload.name, payload.version),
+    ))
   }
   return distribution
 }
@@ -678,7 +711,7 @@ function renderClaudeDistribution(
 
 The project owner authorizes distribution of every version of the official \`${CLAUDE_AGENT_SDK_PACKAGE}\` package and the official Claude Code CLI/platform payloads that each version declares through \`optionalDependencies\`. This identity-scoped authorization does not classify their declared terms as permissive and does not cover any unrelated runtime package; version, declared-license, and payload-set changes still require the ordinary dependency, lockfile, compatibility, terms, and notices review.
 
-The installed SDK ${distribution.sdkVersion} declares the following optional platform packages. Each carries the official Claude Code ${distribution.claudeCodeVersion} executable; the package identities and versions come from the SDK manifest, while the declared license field is verified against the platform payload installed for the current host.
+The installed SDK ${distribution.sdkVersion} declares the following optional platform packages. Each carries the official Claude Code ${distribution.claudeCodeVersion} executable; the package identities and versions come from the SDK manifest, while the declared license field is verified against an installed platform payload when one is available, and against npm registry metadata otherwise.
 
 | Optional platform package | Version | Declared license |
 | --- | --- | --- |
@@ -690,7 +723,7 @@ ${rows.join('\n')}
  * Render the complete notices document.
  * @returns the exact bytes `THIRD_PARTY_NOTICES.md` must hold.
  */
-export function render(): string {
+export async function render(): Promise<string> {
   verifyBuildTimePins()
   const npm = collectNpmDeps()
   const runtimeDeps = npm.filter(dep => dep.runtime)
@@ -701,7 +734,7 @@ export function render(): string {
   const claudeDistribution = runtimeDeps.some(
     dep => dep.name === CLAUDE_AGENT_SDK_PACKAGE,
   )
-    ? collectClaudeDistribution()
+    ? await collectClaudeDistribution()
     : undefined
   const nonPermissiveDev = devDeps.filter(dep => !isPermissive(dep.license))
   // A copyleft license reaching a shipped surface is a distribution decision,
@@ -775,8 +808,8 @@ ${BUILD_TIME_TOOLS.map(tool => `| [\`${tool.name}\`](${tool.repo}) | ${tool.lice
 /** CLI entry: default writes the notices, `--check` fails if the committed copy
  * is stale. Guarded behind an entry-point check so importing this module for
  * tests neither regenerates the committed file nor calls process.exit. */
-function main(): void {
-  const content = render()
+async function main(): Promise<void> {
+  const content = await render()
   if (process.argv.includes('--check')) {
     let committed: string | null = null
     try {
@@ -788,10 +821,12 @@ function main(): void {
     }
     if (committed === content) {
       console.log(`gen-third-party-notices: ${OUT} is up to date.`)
-      process.exit(0)
+      process.exitCode = 0
+      return
     }
     console.error(`gen-third-party-notices: ${OUT} is stale. Run \`pnpm run gen-third-party-notices\` and commit ${OUT}.`)
-    process.exit(1)
+    process.exitCode = 1
+    return
   }
 
   writeFileSync(resolve(root, OUT), content)
@@ -799,5 +834,8 @@ function main(): void {
 }
 
 if (process.argv[1] !== undefined && import.meta.filename === resolve(process.argv[1])) {
-  main()
+  main().catch((error: unknown) => {
+    console.error(error)
+    process.exitCode = 1
+  })
 }

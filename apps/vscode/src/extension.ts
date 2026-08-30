@@ -12,6 +12,7 @@ import { basename, extname, join, resolve } from 'node:path'
 import * as vscode from 'vscode'
 import { startBridge, type BridgeHandlers, type RunningBridge } from './bridge'
 import { buildProfileArgs, resolveLaunch, type WebFlags } from './cli'
+import { formatSelectionReference } from './format'
 import { startServer, type RunningServer } from './server'
 
 const OUTPUT_NAME = 'DeepSeek Harness'
@@ -28,14 +29,45 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+interface PendingInsert {
+  resolve(ok: boolean): void
+  timer: ReturnType<typeof setTimeout>
+}
+
 class WebViewProvider implements vscode.WebviewViewProvider {
   private view: vscode.WebviewView | undefined
+  private connected = false
+  private messageListener: vscode.Disposable | undefined
+  private readonly pending = new Map<string, PendingInsert>()
+  private ready: Promise<void> = Promise.resolve()
+  private resolveReady: (() => void) | undefined
+  private seq = 0
 
   constructor(private readonly boot: () => Promise<RunningServer | undefined>) {}
 
   resolveWebviewView(view: vscode.WebviewView): void {
     this.view = view
+    this.connected = false
+    this.resetReady()
     view.webview.options = { enableScripts: true }
+    this.messageListener?.dispose()
+    this.messageListener = view.webview.onDidReceiveMessage((message) => {
+      if (!isRecord(message)) return
+      if (message.type === 'dsh.ready') {
+        this.resolveReady?.()
+        return
+      }
+      if (message.type !== 'dsh.insert-text-result' || typeof message.id !== 'string') return
+      const pending = this.pending.get(message.id)
+      if (pending === undefined) return
+      clearTimeout(pending.timer)
+      this.pending.delete(message.id)
+      pending.resolve(message.ok === true)
+    })
     view.webview.html = this.shell('<p class="hint">正在启动 DeepSeek Harness…</p>')
     void this.connect()
   }
@@ -45,19 +77,107 @@ class WebViewProvider implements vscode.WebviewViewProvider {
     const webview = this.view?.webview
     if (webview === undefined) return
     if (running === undefined) {
+      this.connected = false
       webview.html = this.shell('<p class="hint error">DeepSeek Harness 启动失败。</p>')
       return
     }
-    // Scope the embedded session list to the open workspace: its path rides the
-    // URL so the web filters `session.list` rows by `cwd`.
+    // Keep the launch token from the printed URL and scope the embedded session
+    // list to the open workspace: its path rides the URL so the web filters
+    // `session.list` rows by `cwd`.
     const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? process.cwd()
-    webview.html = this.frame(`${running.url}?embed=1&cwd=${encodeURIComponent(cwd)}`)
+    const url = new URL(running.url)
+    url.searchParams.set('embed', '1')
+    url.searchParams.set('cwd', cwd)
+    this.resetReady()
+    webview.html = this.frame(url.toString())
+    this.connected = true
   }
 
   offline(): void {
     const webview = this.view?.webview
     if (webview === undefined) return
+    this.connected = false
+    this.resetReady()
     webview.html = this.shell('<p class="hint">DeepSeek Harness 已停止——运行「DeepSeek Harness: Open」重新启动。</p>')
+  }
+
+  /**
+   * Send text into the embedded harness input. Focuses the sidebar view and
+   * waits for the harness iframe before posting; resolves false when the
+   * frame does not acknowledge within five seconds.
+   * @param text - text to insert at the composer caret.
+   * @returns whether the harness accepted the insert.
+   */
+  async sendToHarness(text: string): Promise<boolean> {
+    if (this.view === undefined) {
+      await vscode.commands.executeCommand(`${VIEW_ID}.focus`)
+      if (this.view === undefined) return false
+    }
+    if (!this.connected) {
+      const running = await this.boot()
+      if (running === undefined || this.view === undefined) return false
+      await this.connect()
+      if (!this.connected) return false
+    }
+    const ready = await new Promise<boolean>((resolve) => {
+      const timer = setTimeout(() => resolve(false), 5000)
+      void this.ready.then(() => {
+        clearTimeout(timer)
+        resolve(true)
+      })
+    })
+    if (!ready) return false
+    const webview = this.view.webview
+    const id = `dsh-${String(++this.seq)}`
+    return new Promise<boolean>((resolve) => {
+      const timer = setTimeout(() => {
+        this.pending.delete(id)
+        resolve(false)
+      }, 5000)
+      this.pending.set(id, { resolve, timer })
+      const message = { type: 'dsh.insert-text', id, text }
+      try {
+        const posted = webview.postMessage(message)
+        if (posted !== undefined) {
+          void Promise.resolve(posted).then((accepted) => {
+            if (accepted !== false) return
+            const entry = this.pending.get(id)
+            if (entry === undefined) return
+            clearTimeout(entry.timer)
+            this.pending.delete(id)
+            entry.resolve(false)
+          }).catch(() => {
+            const entry = this.pending.get(id)
+            if (entry === undefined) return
+            clearTimeout(entry.timer)
+            this.pending.delete(id)
+            entry.resolve(false)
+          })
+        }
+      } catch {
+        const entry = this.pending.get(id)
+        if (entry !== undefined) {
+          clearTimeout(entry.timer)
+          this.pending.delete(id)
+          entry.resolve(false)
+        }
+      }
+    })
+  }
+
+  dispose(): void {
+    this.messageListener?.dispose()
+    this.messageListener = undefined
+    for (const { timer, resolve } of this.pending.values()) {
+      clearTimeout(timer)
+      resolve(false)
+    }
+    this.pending.clear()
+  }
+
+  private resetReady(): void {
+    this.resolveReady = undefined
+    this.ready = new Promise<void>((resolve) => { this.resolveReady = resolve })
   }
 
   private frame(url: string): string {
@@ -65,7 +185,7 @@ class WebViewProvider implements vscode.WebviewViewProvider {
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; frame-src http://127.0.0.1:*;">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; frame-src http://127.0.0.1:*;">
 <style>
 html, body { margin: 0; padding: 0; height: 100%; background: var(--vscode-editor-background); }
 iframe { width: 100%; height: 100%; border: 0; display: block; }
@@ -73,6 +193,35 @@ iframe { width: 100%; height: 100%; border: 0; display: block; }
 </head>
 <body>
 <iframe id="dsh" src="${url}" sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox allow-downloads allow-modals" allow="clipboard-read; clipboard-write"></iframe>
+<script>
+(function () {
+  const vscode = acquireVsCodeApi()
+  vscode.postMessage({ type: 'dsh.ready' })
+  const iframe = document.getElementById('dsh')
+  const origin = new URL(iframe.getAttribute('src')).origin
+  const token = new URL(iframe.getAttribute('src')).searchParams.get('token') || ''
+  let loaded = false
+  const pending = []
+  iframe.addEventListener('load', () => {
+    loaded = true
+    for (const message of pending) iframe.contentWindow.postMessage(message, origin)
+    pending.length = 0
+  })
+  window.addEventListener('message', (event) => {
+    const data = event.data
+    if (!data || data.type !== 'dsh.insert-text' || typeof data.id !== 'string' || typeof data.text !== 'string') return
+    const message = { source: 'dsh-vscode', type: 'insert-text', id: data.id, text: data.text, token }
+    if (loaded) iframe.contentWindow.postMessage(message, origin)
+    else pending.push(message)
+  })
+  window.addEventListener('message', (event) => {
+    if (event.source !== iframe.contentWindow) return
+    const data = event.data
+    if (!data || data.source !== 'dsh-web' || data.type !== 'insert-text-result') return
+    vscode.postMessage({ type: 'dsh.insert-text-result', id: data.id, ok: data.ok === true })
+  })
+})()
+</script>
 </body>
 </html>`
   }
@@ -254,6 +403,41 @@ export function activate(context: vscode.ExtensionContext): void {
     await webProvider?.connect()
   }
 
+  async function sendToHarness(text: string): Promise<void> {
+    if (webProvider === undefined) return
+    const ok = await webProvider.sendToHarness(text)
+    if (!ok) {
+      void vscode.window.showWarningMessage('DeepSeek Harness 尚未就绪，无法发送到输入框。')
+    }
+  }
+
+  async function sendSelection(uri?: vscode.Uri): Promise<void> {
+    const editor = uri === undefined
+      ? vscode.window.activeTextEditor
+      : vscode.window.visibleTextEditors.find(candidate => candidate.document.uri.toString() === uri.toString())
+        ?? vscode.window.activeTextEditor
+    if (editor === undefined || editor.document.uri.scheme !== 'file') {
+      void vscode.window.showWarningMessage('只能发送本地文件的选择。')
+      return
+    }
+    const selection = editor.selection
+    await sendToHarness(formatSelectionReference(editor.document.uri.fsPath, {
+      startLine: selection.start.line,
+      startCharacter: selection.start.character,
+      endLine: selection.end.line,
+      endCharacter: selection.end.character,
+    }))
+  }
+
+  async function sendFile(uri?: vscode.Uri): Promise<void> {
+    const fileUri = uri ?? vscode.window.activeTextEditor?.document.uri
+    if (fileUri === undefined || fileUri.scheme !== 'file') {
+      void vscode.window.showWarningMessage('没有可发送的本地文件。')
+      return
+    }
+    await sendToHarness(fileUri.fsPath)
+  }
+
   webProvider = new WebViewProvider(boot)
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider(VIEW_ID, webProvider, {
@@ -263,12 +447,16 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('dsh.openBrowser', () => openBrowser()),
     vscode.commands.registerCommand('dsh.restart', () => restart()),
     vscode.commands.registerCommand('dsh.stop', () => stop()),
+    vscode.commands.registerCommand('dsh.sendSelection', (uri?: vscode.Uri) => sendSelection(uri)),
+    vscode.commands.registerCommand('dsh.sendFile', (uri?: vscode.Uri) => sendFile(uri)),
   )
 
   setStatus(false)
 }
 
 export async function deactivate(): Promise<void> {
+  webProvider?.dispose()
+  webProvider = undefined
   const running = server
   server = undefined
   if (running !== undefined) {

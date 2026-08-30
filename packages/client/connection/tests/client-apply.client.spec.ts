@@ -284,6 +284,33 @@ describe('connection client apply', () => {
     })
   })
 
+  it('adds the embedded launch token to RPC requests when the page URL carries one', async () => {
+    ;(globalThis as Win).location = {
+      hostname: '127.0.0.1', search: '?token=test-token&embed=1', origin: 'http://127.0.0.1:49914',
+    }
+    const handle = await mount()
+    const original = globalThis.fetch
+    const fetchMock = vi.fn(async (_input: URL | RequestInfo, init?: RequestInit) => {
+      const body = typeof init?.body === 'string' ? JSON.parse(init.body) as { rpcId: string } : undefined
+      if (body === undefined) throw new TypeError('expected a JSON string request body')
+      return Response.json({
+        type: 'server-response',
+        rpcId: body.rpcId,
+        result: { ok: true, value: null },
+      })
+    })
+    globalThis.fetch = fetchMock
+    try {
+      await handle.rpc.call('/api', 'goals/create', {})
+    } finally {
+      globalThis.fetch = original
+    }
+    expect(fetchMock.mock.calls[0]?.[1]?.headers).toMatchObject({
+      'content-type': 'application/json',
+      'x-dsh-token': 'test-token',
+    })
+  })
+
   it('exposes a worker-local Gateway stream through connection.rpc.open', async () => {
     ;(globalThis as Win).location = { hostname: 'preview.example', search: '' }
     const openStream = vi.fn<NonNullable<ClientTransportHooks['openStream']>>(

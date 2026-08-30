@@ -95,7 +95,9 @@ export class HostConnectionService extends Service implements HostConnectionHand
   /** Apply the configured Host/Origin fence, then browser authentication. */
   requestRejection(request: ConnectionTrustRequest): ConnectionRequestRejection {
     if (!isTrustedApiRequest(request, this.trustedHosts)) return 403
-    return this.browserAuth.isAuthenticated(request) ? undefined : 401
+    return this.browserAuth.isAuthenticated(request) || this.browserAuth.isLaunchTokenRequest(request)
+      ? undefined
+      : 401
   }
 
   /** Authenticate an index request through the process-token exchange or cookie. */
