@@ -235,9 +235,9 @@ describe('web e2e: long Chat interaction contract', () => {
       { timeout: 5_000 },
     ).toBe(1)
 
-    // Desktop-only affordance: a narrow Chat container hides the rail outright.
+    // The rail stays visible at narrow widths and on a wide desktop viewport.
     await page.setViewportSize({ width: 800, height: 900 })
-    await turnNavigation.waitFor({ state: 'hidden', timeout: 5_000 })
+    await turnNavigation.waitFor({ state: 'visible', timeout: 5_000 })
     await page.setViewportSize({ width: 1_680, height: 900 })
     await turnNavigation.waitFor({ state: 'visible', timeout: 5_000 })
 

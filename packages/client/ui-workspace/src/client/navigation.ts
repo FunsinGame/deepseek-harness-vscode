@@ -168,6 +168,10 @@ class UiWorkspaceService extends Service implements UiWorkspace {
         initial = 'done'
         return
       }
+      if (typeof document !== 'undefined' && document.documentElement.dataset.dshEmbed === '1') {
+        initial = 'done'
+        return
+      }
       const target = recentWorkspace(workspace.items, sessions.byId)
       if (target === undefined) {
         initial = 'done'

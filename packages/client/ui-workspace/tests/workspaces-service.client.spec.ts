@@ -452,4 +452,29 @@ describe('UiWorkspaceService', () => {
       rpcError: { code: 'directory-picker/exists' },
     })
   })
+
+  it('does not auto-open a session on initial load in embedded mode', async () => {
+    const originalDocument = globalThis.document
+    ;(globalThis as unknown as { document?: unknown }).document = {
+      documentElement: { dataset: { dshEmbed: '1' } },
+    }
+    try {
+      const b = bench()
+      b.sessions.create.mockResolvedValue(sid('initial'))
+
+      const recent = workspace('recent', [], '2026-01-02T00:00:00.000Z')
+      b.workspaces.list.set(workspaceState([recent]))
+      b.sessions.list.set(sessionState())
+
+      await new Promise(resolve => setTimeout(resolve, 50))
+      expect(b.sessions.open).not.toHaveBeenCalled()
+      expect(b.sessions.create).not.toHaveBeenCalled()
+    } finally {
+      if (originalDocument === undefined) {
+        delete (globalThis as unknown as { document?: unknown }).document
+      } else {
+        ;(globalThis as unknown as { document?: unknown }).document = originalDocument
+      }
+    }
+  })
 })
