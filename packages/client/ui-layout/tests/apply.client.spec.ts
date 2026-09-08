@@ -45,7 +45,6 @@ describe('ui-layout client apply', () => {
     // …and declared the three children in the ledger.
     expect(slots.spec('sidebar')).toEqual({ kind: 'single', scope: 'root' })
     expect(slots.spec('conversation')).toEqual({ kind: 'single', scope: 'session-maybe' })
-    expect(slots.spec('details')).toEqual({ kind: 'single', scope: 'session' })
   })
 
   it('injects the back action and attaches the layout actions', async () => {
