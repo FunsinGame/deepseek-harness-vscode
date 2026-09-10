@@ -6,9 +6,10 @@
  * that workspace's conversations, and clicking a session opens its chat.
  */
 
+import { existsSync } from 'node:fs'
 import { mkdtemp, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { basename, extname, join, resolve } from 'node:path'
+import { basename, extname, isAbsolute, join, resolve } from 'node:path'
 import * as vscode from 'vscode'
 import { startBridge, type BridgeHandlers, type RunningBridge } from './bridge'
 import { buildProfileArgs, resolveLaunch, type WebFlags } from './cli'
@@ -243,6 +244,26 @@ html, body { margin: 0; padding: 0; height: 100%; background: var(--vscode-edito
   }
 }
 
+function resolveFileUri(targetPath: string): vscode.Uri {
+  if (isAbsolute(targetPath)) {
+    return vscode.Uri.file(targetPath)
+  }
+  const folders = vscode.workspace.workspaceFolders
+  if (folders && folders.length > 0) {
+    for (const folder of folders) {
+      const candidateFsPath = resolve(folder.uri.fsPath, targetPath)
+      if (existsSync(candidateFsPath)) {
+        return vscode.Uri.file(candidateFsPath)
+      }
+    }
+    const firstFolder = folders[0]
+    if (firstFolder !== undefined) {
+      return vscode.Uri.file(resolve(firstFolder.uri.fsPath, targetPath))
+    }
+  }
+  return vscode.Uri.file(targetPath)
+}
+
 export function activate(context: vscode.ExtensionContext): void {
   const output = vscode.window.createOutputChannel(OUTPUT_NAME)
   context.subscriptions.push(output)
@@ -254,7 +275,8 @@ export function activate(context: vscode.ExtensionContext): void {
     const handlers: BridgeHandlers = {
       openFile: async ({ path, line }) => {
         try {
-          const document = await vscode.workspace.openTextDocument(vscode.Uri.file(path))
+          const fileUri = resolveFileUri(path)
+          const document = await vscode.workspace.openTextDocument(fileUri)
           await vscode.window.showTextDocument(document, {
             preview: true,
             ...(line === undefined ? {} : { selection: new vscode.Range(line - 1, 0, line - 1, 0) }),
