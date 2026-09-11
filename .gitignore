@@ -44,3 +44,4 @@ apps/vscode/dist/
 worktrees/
 .agents/worktrees/
 .typert-*/
+native/system/test/bin/
